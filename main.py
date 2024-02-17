@@ -24,6 +24,16 @@ class SandSimulation:
     def within_rows(self, j):
         return 0 <= j < self.rows
 
+    def erase_particles(self, mouse_col, mouse_row, matrix=2):
+        extent = matrix // 2
+        #for i in range(-extent, extent + 1):
+            #for j in range(-extent, extent + 1):
+        col = mouse_col + 1
+        row = mouse_row + 1
+        if self.within_cols(col) and self.within_rows(row):
+            self.grid[col][row] = 0  # Set the cell to 0 to erase the particle
+            self.velocity_grid[col][row] = 0  # Optionally reset the velocity grid as well
+
     def add_sand_particles(self, mouse_col, mouse_row, matrix=5):
         extent = matrix // 2
         for i in range(-extent, extent + 1):
@@ -99,19 +109,19 @@ class SandSimulation:
                 if event.type == pygame.QUIT:
                     running = False
             mouse_pressed = pygame.mouse.get_pressed()
+            mouseX, mouseY = pygame.mouse.get_pos()
+            mouseCol = mouseX // self.w
+            mouseRow = mouseY // self.w
             if mouse_pressed[0]:  # If left mouse button is pressed
-                mouseX, mouseY = pygame.mouse.get_pos()
-                mouseCol = mouseX // self.w
-                mouseRow = mouseY // self.w
                 self.add_sand_particles(mouseCol, mouseRow)
+            elif event.type == pygame.MOUSEBUTTONDOWN:  # If right mouse button is pressed, act as an eraser
+                self.erase_particles(mouseCol, mouseRow)
             self.update_particles()
             self.draw_grid()
             pygame.display.flip()  # Update the display
             clock.tick(60)  # Limit to 60 frames per second
-        pygame.quit()
-        sys.exit()
 
 
 if __name__ == "__main__":
-    sim = SandSimulation(800, 600, 5)  # Setup with desired window size and square size
+    sim = SandSimulation(800, 600, 1)  # Setup with desired window size and square size
     sim.run()
