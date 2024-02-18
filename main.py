@@ -14,6 +14,9 @@ class SandSimulation:
         self.velocity_grid = self.make_2d_array(self.cols, self.rows)
         self.hueValue = 200
         self.gravity = 0.1
+        self.update_counter = 0
+        self.update_frequency = 5  # Update every 5 frames.
+        self.particle_surface = pygame.Surface((width, height), pygame.SRCALPHA)
 
     def make_2d_array(self, cols, rows):
         return [[0 for _ in range(rows)] for _ in range(cols)]
@@ -49,12 +52,19 @@ class SandSimulation:
             self.hueValue = 0
 
     def draw_grid(self):
+        # Clear the particle surface at the start of each draw call
+        self.particle_surface.fill((0, 0, 0, 0))  # Use a fully transparent fill
+
+        # Draw particles on the particle surface
         for i in range(self.cols):
             for j in range(self.rows):
                 if self.grid[i][j] > 0:
                     color = pygame.Color(0)
                     color.hsva = (self.grid[i][j], 100, 100, 100)
-                    pygame.draw.rect(self.screen, color, (i * self.w, j * self.w, self.w, self.w))
+                    pygame.draw.rect(self.particle_surface, color, (i * self.w, j * self.w, self.w, self.w))
+
+        # After drawing all particles, blit the particle surface to the main screen
+        self.screen.blit(self.particle_surface, (0, 0))
 
     def update_particles(self):
         nextGrid = self.make_2d_array(self.cols, self.rows)
@@ -116,12 +126,16 @@ class SandSimulation:
                 self.add_sand_particles(mouseCol, mouseRow)
             elif event.type == pygame.MOUSEBUTTONDOWN:  # If right mouse button is pressed, act as an eraser
                 self.erase_particles(mouseCol, mouseRow)
-            self.update_particles()
+            self.update_counter += 1
+            if self.update_counter >= self.update_frequency:
+                self.update_particles()
+                self.update_counter = 0
+
             self.draw_grid()
             pygame.display.flip()  # Update the display
             clock.tick(60)  # Limit to 60 frames per second
 
 
 if __name__ == "__main__":
-    sim = SandSimulation(800, 600, 1)  # Setup with desired window size and square size
+    sim = SandSimulation(800, 600, 5)  # Setup with desired window size and square size
     sim.run()
