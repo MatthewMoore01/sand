@@ -3,6 +3,33 @@ import random
 import sys
 
 
+class ParticleType:
+    EMPTY = 0
+    SAND = 1
+    STONE = 2
+    WATER = 3
+
+
+PARTICLE_HUES = {
+    ParticleType.SAND: 30,  # Hue for sand
+    ParticleType.STONE: 40,  # Hue for stone
+    ParticleType.WATER: 90,  # Hue for water
+}
+
+PARTICLE_LIGHT = {
+    ParticleType.SAND: 100,  # Lightness for sand
+    ParticleType.STONE: 50,   # Lightness for stone
+    ParticleType.WATER: 100,  # Lightness for water
+}
+
+PARTICLE_BRUSH = {
+    ParticleType.SAND: 50,  # Brush size for sand
+    ParticleType.STONE: 10,  # Brush size for stone
+    ParticleType.WATER: 10,  # Brush size for water
+}
+
+
+
 class SandSimulation:
     def __init__(self, square_size):
         pygame.init()
@@ -11,11 +38,12 @@ class SandSimulation:
         display_info = pygame.display.Info()
         self.world_width = display_info.current_w
         self.world_height = display_info.current_h
+        self.active_particles = set()
 
         # Set the window size to some fraction of the screen size for windowed mode
         # or you can use the full screen size for full screen mode.
-        width = self.world_width // 2
-        height = self.world_height // 2
+        width = self.world_width
+        height = self.world_height - 60
 
         self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
         pygame.display.set_caption("Array Visualization")
@@ -25,18 +53,16 @@ class SandSimulation:
         self.viewport = pygame.Rect(0, 0, width, height)
 
         # Create a grid that represents the entire world
-        self.cols = int(self.world_width / self.w)
-        self.rows = int(self.world_height / self.w)
+        self.cols = int(width / self.w)
+        self.rows = int(height / self.w)
         self.grid = self.make_2d_array(self.cols, self.rows)
         self.velocity_grid = self.make_2d_array(self.cols, self.rows)
-
-        self.hueValue = 50
-        self.gravity = 1
+        self.gravity = 0.001
         self.particle_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-        self.hue_start = 20  # Start of the hue range
+        self.sat_start = 20
 
     def make_2d_array(self, cols, rows):
-        return [[0 for _ in range(rows)] for _ in range(cols)]
+        return [[(ParticleType.EMPTY, 0) for _ in range(rows)] for _ in range(cols)]
 
     def within_cols(self, i):
         return 0 <= i < self.cols
@@ -44,34 +70,49 @@ class SandSimulation:
     def within_rows(self, j):
         return 0 <= j < self.rows
 
-    def erase_particles(self, mouse_col, mouse_row, matrix=2):
+    def erase_particles(self, mouse_col, mouse_row, particle_type, matrix=4):
         extent = matrix // 2
         for i in range(-extent, extent + 1):
             for j in range(-extent, extent + 1):
                 col = mouse_col + i
                 row = mouse_row + j
                 if self.within_cols(col) and self.within_rows(row):
-                    self.grid[col][row] = 0  # Set the cell to 0 to erase the particle
-                    self.velocity_grid[col][row] = 0  # Optionally reset the velocity grid as well
+                    self.grid[col][row] = (ParticleType.EMPTY, 0)  # Update to use the tuple format for consistency
+                    self.velocity_grid[col][row] = 0
+                    self.active_particles.discard((col, row))
 
-    def add_sand_particles(self, mouse_col, mouse_row, matrix=40):
+                    # Activate surrounding particles if they can potentially move
+                    if particle_type == ParticleType.SAND or ParticleType.WATER:
+                        for dy in [-1, 0, 1]:  # Check the row above, same row, and below
+                            for dx in [-1, 0, 1]:  # Check left, same column, and right
+                                adj_col, adj_row = col + dx, row + dy
+                                if self.within_bounds(adj_col, adj_row) and self.grid[adj_col][adj_row][
+                                    0] != ParticleType.EMPTY:
+                                    self.active_particles.add((adj_col, adj_row))
+
+    def add_particle(self, mouse_col, mouse_row, particle_type):
+        matrix = PARTICLE_BRUSH.get(particle_type, 30)
         extent = matrix // 2
         for i in range(-extent, extent + 1):
             for j in range(-extent, extent + 1):
-                if random.random() < 0.75:
-                    col = mouse_col + i
-                    row = mouse_row + j
-                    if self.within_cols(col) and self.within_rows(row):
-                        # Assign a random hue within a rolling window of 20 values
-                        hue = random.uniform(self.hue_start, self.hue_start + 20)
-                        self.grid[col][row] = hue
-                        self.velocity_grid[col][row] = 1
+                col = mouse_col + i
+                row = mouse_row + j
+                if (col, row) not in self.active_particles and self.within_cols(col) and self.within_rows(row):
+                    sat = random.uniform(self.sat_start, self.sat_start + 20)
+                    self.grid[col][row] = (particle_type, sat)  # Store particle type and sat in a tuple
 
-        # Increment the start of the hue range
-        self.hue_start += 0.3
-        # Wrap around if the end of the hue range exceeds 100
-        if self.hue_start > 80:
-            self.hue_start = 20
+                    # Set initial velocity based on particle type
+                    initial_velocity = 1 if particle_type == ParticleType.SAND else 1
+                    self.velocity_grid[col][row] = initial_velocity
+
+                    # Add to active particles if it's sand, since stone doesn't move
+                    self.active_particles.add((col, row))
+
+        # Increment the start of the sat range
+        self.sat_start += 1
+        # Wrap around if the end of the sat range exceeds 100
+        if self.sat_start > 80:
+            self.sat_start = 20
 
     def draw_grid(self):
         # Clear the screen with a black fill before drawing the new frame.
@@ -83,16 +124,19 @@ class SandSimulation:
         visible_start_row = max(0, self.viewport.top // self.w)
         visible_end_row = min(self.rows, (self.viewport.bottom // self.w) + 1)
 
-        # Pre-create a color object to avoid creating a new one for each particle
-        particle_color = pygame.Color(0)
-
         # Iterate only over the visible particles
         for col in range(visible_start_col, visible_end_col):
             for row in range(visible_start_row, visible_end_row):
-                state = self.grid[col][row]
-                if state > 0:
-                    # Update the color's hue value
-                    particle_color.hsva = (30, 100, state, 100)
+                particle_type, saturation = self.grid[col][row]
+                if particle_type != ParticleType.EMPTY:
+                    # Determine the hue based on particle type
+                    hue = PARTICLE_HUES.get(particle_type)
+                    light = PARTICLE_LIGHT.get(particle_type)
+                    # Update the particle_color's hsva value
+                    particle_color = pygame.Color(0)
+                    particle_color.hsva = (hue, light, saturation, 100)
+
+                    # Calculate the position to draw the rectangle on the screen
                     screen_x = (col - visible_start_col) * self.w
                     screen_y = (row - visible_start_row) * self.w
                     pygame.draw.rect(self.screen, particle_color, (screen_x, screen_y, self.w, self.w))
@@ -100,60 +144,79 @@ class SandSimulation:
     def update_particles(self):
         nextGrid = self.make_2d_array(self.cols, self.rows)
         nextVelocityGrid = self.make_2d_array(self.cols, self.rows)
+        new_active_particles = set()
 
-        for i in range(self.cols):
-            for j in range(self.rows):
-                state = self.grid[i][j]
-                if state > 0:
-                    velocity = self.velocity_grid[i][j]
-                    moved = False
-                    newpos = int(j + velocity)
+        for col, row in self.active_particles:
+            state = self.grid[col][row]
+            particle_type, saturation = state
+            directions = [1, -1] if random.random() < 0.5 else [-1, 1]
 
-                    # Check within the bounds of the grid
-                    for y in range(newpos, j, -1):
-                        if 0 <= y < self.rows:
-                            below = self.grid[i][y]
-                            dir = 1 if random.random() < 0.5 else -1
-                            i_dir_plus = i + dir
-                            i_dir_minus = i - dir
+            moved = False  # Flag to track if the particle has moved
 
-                            # Check if the new positions are within bounds
-                            if 0 <= i_dir_plus < self.cols:
-                                belowA = self.grid[i_dir_plus][y]
-                            else:
-                                belowA = -1
+            # Sand specific logic for falling
+            if particle_type == ParticleType.SAND:
+                if row + 1 < self.rows and self.grid[col][row + 1][0] == ParticleType.EMPTY:
+                    # Move sand down if the spot directly below is empty
+                    nextGrid[col][row + 1] = state
+                    nextVelocityGrid[col][row + 1] = self.gravity
+                    new_active_particles.add((col, row + 1))
+                    moved = True
+                else:
+                    # Try to move sand diagonally down if the spot directly below is not empty
+                    for dir in directions:
+                        adjacent_col = col + dir
+                        if row + 1 < self.rows and self.within_cols(adjacent_col) and self.grid[adjacent_col][row + 1][
+                            0] == ParticleType.EMPTY:
+                            nextGrid[adjacent_col][row + 1] = state
+                            nextVelocityGrid[adjacent_col][row + 1] = self.gravity
+                            new_active_particles.add((adjacent_col, row + 1))
+                            moved = True
+                            break
 
-                            if 0 <= i_dir_minus < self.cols:
-                                belowB = self.grid[i_dir_minus][y]
-                            else:
-                                belowB = -1
+            # Water specific logic for falling and spreading
+            elif particle_type == ParticleType.WATER:
+                moved = False
+                # First, try moving down
+                if row + 1 < self.rows and self.grid[col][row + 1][0] == ParticleType.EMPTY:
+                    nextGrid[col][row + 1] = state
+                    nextVelocityGrid[col][row + 1] = 0  # No gravity effect for water moving down
+                    new_active_particles.add((col, row + 1))
+                    moved = True
+                else:
+                    # Try to move water right if the spot directly below is not empty
+                    if self.within_cols(col + 1) and self.grid[col + 1][row][0] == ParticleType.EMPTY:
+                        nextGrid[col + 1][row] = state
+                        nextVelocityGrid[col + 1][row] = self.gravity  # No gravity effect for water moving right
+                        new_active_particles.add((col + 1, row))
+                        moved = True
+                    # If moving right is not possible, then try to move left
+                    elif self.within_cols(col - 1) and self.grid[col - 1][row][0] == ParticleType.EMPTY:
+                        nextGrid[col - 1][row] = state
+                        nextVelocityGrid[col - 1][row] = self.gravity  # No gravity effect for water moving left
+                        new_active_particles.add((col - 1, row))
+                        moved = True
 
-                            if below == 0:
-                                nextGrid[i][y] = state
-                                nextVelocityGrid[i][y] = velocity + self.gravity
-                                moved = True
-                                break
-                            elif belowA == 0:
-                                nextGrid[i_dir_plus][y] = state
-                                nextVelocityGrid[i_dir_plus][y] = velocity + self.gravity
-                                moved = True
-                                break
-                            elif belowB == 0:
-                                nextGrid[i_dir_minus][y] = state
-                                nextVelocityGrid[i_dir_minus][y] = velocity + self.gravity
-                                moved = True
-                                break
+                # If water couldn't move down, right, or left, keep it in its current position
+                if not moved:
+                    nextGrid[col][row] = state
+                    nextVelocityGrid[col][row] = 0
+                    new_active_particles.add((col, row))
 
-                    if not moved and 0 <= j < self.rows:
-                        nextGrid[i][j] = state
-                        nextVelocityGrid[i][j] = min(velocity + self.gravity, self.rows - 1 - j)
+            # If the particle has not moved (either it's at the bottom or surrounded), keep it in its current position
+            if not moved:
+                nextGrid[col][row] = state
+                nextVelocityGrid[col][row] = self.gravity if particle_type == ParticleType.SAND else 0
+                new_active_particles.add((col, row))
 
+        # Update the grid and active particles for the next iteration
         self.grid, self.velocity_grid = nextGrid, nextVelocityGrid
+        self.active_particles = new_active_particles
 
     def run(self):
         running = True
         clock = pygame.time.Clock()
-        scroll_speed = 10  # Adjust as needed for the scrolling speed
+        scroll_speed = 10
+        current_particle_type = ParticleType.SAND
 
         while running:
             for event in pygame.event.get():
@@ -162,42 +225,30 @@ class SandSimulation:
                 elif event.type == pygame.VIDEORESIZE:
                     # Adjust the viewport size without changing the world size
                     new_width, new_height = event.w, event.h
-                    old_height = self.viewport.height
                     self.viewport.size = (new_width, new_height)
-
-                    # Adjust the vertical position of the viewport to keep the floor at the bottom
-                    height_difference = new_height - old_height
-                    self.viewport.bottom += height_difference
-
-                    # Ensure the viewport does not go beyond the world's top boundary
-                    self.viewport.top = max(0, self.viewport.top)
-                    self.viewport.bottom = min(self.world_height, self.viewport.bottom)
-
                     self.screen = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
-                    # Recreate the particle surface if necessary or resize it
-
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mouseX, mouseY = pygame.mouse.get_pos()
                     mouseCol = (mouseX + self.viewport.left) // self.w
                     mouseRow = (mouseY + self.viewport.top) // self.w
                     if event.button == 1:  # Left mouse button adds particles
-                        self.add_sand_particles(mouseCol, mouseRow)
+                        self.add_particle(mouseCol, mouseRow, current_particle_type)
                     elif event.button == 3:  # Right mouse button erases particles
-                        self.erase_particles(mouseCol, mouseRow)
+                        self.erase_particles(mouseCol, mouseRow, current_particle_type)
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_1:
+                        current_particle_type = ParticleType.SAND
+                    elif event.key == pygame.K_2:
+                        current_particle_type = ParticleType.STONE
+                    elif event.key == pygame.K_3:
+                        current_particle_type = ParticleType.WATER
 
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT]:
                 self.viewport.x = max(self.viewport.x - scroll_speed, 0)  # Scroll left
             if keys[pygame.K_RIGHT]:
-                self.viewport.x = min(self.viewport.x + scroll_speed, self.world_width - self.viewport.width)  # Scroll right
-            # Add more controls if you want to scroll vertically as well
-
-            mouse_pressed = pygame.mouse.get_pressed()
-            if mouse_pressed[0]:  # If left mouse button is pressed and held
-                mouseX, mouseY = pygame.mouse.get_pos()
-                mouseCol = (mouseX + self.viewport.left) // self.w
-                mouseRow = (mouseY + self.viewport.top) // self.w
-                self.add_sand_particles(mouseCol, mouseRow)
+                self.viewport.x = min(self.viewport.x + scroll_speed,
+                                      self.world_width - self.viewport.width)  # Scroll right
 
             # Drawing everything
             self.update_particles()
@@ -213,5 +264,5 @@ class SandSimulation:
 
 
 if __name__ == "__main__":
-    sim = SandSimulation(4)  # Pass the square size directly
+    sim = SandSimulation(6)  # Pass the square size directly
     sim.run()
