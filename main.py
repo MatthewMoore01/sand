@@ -4,15 +4,32 @@ import sys
 
 
 class SandSimulation:
-    def __init__(self, width, height, square_size):
+    def __init__(self, square_size):
         pygame.init()
-        self.screen = pygame.display.set_mode((width, height))
+        pygame.font.init()  # Initialize the font module
+        self.font = pygame.font.SysFont(None, 24)  # Choose the default system font and set the size
+        display_info = pygame.display.Info()
+        self.world_width = display_info.current_w
+        self.world_height = display_info.current_h
+
+        # Set the window size to some fraction of the screen size for windowed mode
+        # or you can use the full screen size for full screen mode.
+        width = self.world_width // 2
+        height = self.world_height // 2
+
+        self.screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
         pygame.display.set_caption("Array Visualization")
         self.w = square_size
-        self.cols = int(width / self.w)
-        self.rows = int(height / self.w)
+
+        # Define a viewport rect that represents the currently visible area of the world
+        self.viewport = pygame.Rect(0, 0, width, height)
+
+        # Create a grid that represents the entire world
+        self.cols = int(self.world_width / self.w)
+        self.rows = int(self.world_height / self.w)
         self.grid = self.make_2d_array(self.cols, self.rows)
         self.velocity_grid = self.make_2d_array(self.cols, self.rows)
+
         self.hueValue = 50
         self.gravity = 1
         self.particle_surface = pygame.Surface((width, height), pygame.SRCALPHA)
@@ -57,23 +74,28 @@ class SandSimulation:
             self.hue_start = 20
 
     def draw_grid(self):
-        # Clear the particle surface with a transparent fill before drawing the new frame.
-        self.particle_surface.fill((0, 0, 0, 0))
+        # Clear the screen with a black fill before drawing the new frame.
+        self.screen.fill((0, 0, 0))
 
-        # Draw particles on the particle surface.
-        for i in range(self.cols):
-            for j in range(self.rows):
-                state = self.grid[i][j]
+        # Calculate the visible range based on the viewport
+        visible_start_col = max(0, self.viewport.left // self.w)
+        visible_end_col = min(self.cols, (self.viewport.right // self.w) + 1)
+        visible_start_row = max(0, self.viewport.top // self.w)
+        visible_end_row = min(self.rows, (self.viewport.bottom // self.w) + 1)
+
+        # Pre-create a color object to avoid creating a new one for each particle
+        particle_color = pygame.Color(0)
+
+        # Iterate only over the visible particles
+        for col in range(visible_start_col, visible_end_col):
+            for row in range(visible_start_row, visible_end_row):
+                state = self.grid[col][row]
                 if state > 0:
-                    hue = state
-                    color = pygame.Color(0)
-                    color.hsva = (30, 100, hue, 100)
-                    # The particle is drawn as a rectangle here, but this could be optimized
-                    # further based on the shape and size of your particles.
-                    pygame.draw.rect(self.particle_surface, color, (i * self.w, j * self.w, self.w, self.w))
-
-        # Blit the off-screen surface with all the particles onto the main screen.
-        self.screen.blit(self.particle_surface, (0, 0))
+                    # Update the color's hue value
+                    particle_color.hsva = (30, 100, state, 100)
+                    screen_x = (col - visible_start_col) * self.w
+                    screen_y = (row - visible_start_row) * self.w
+                    pygame.draw.rect(self.screen, particle_color, (screen_x, screen_y, self.w, self.w))
 
     def update_particles(self):
         nextGrid = self.make_2d_array(self.cols, self.rows)
@@ -131,31 +153,65 @@ class SandSimulation:
     def run(self):
         running = True
         clock = pygame.time.Clock()
+        scroll_speed = 10  # Adjust as needed for the scrolling speed
+
         while running:
-            self.screen.fill((0, 0, 0))  # Clear screen with black
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    # Adjust the viewport size without changing the world size
+                    new_width, new_height = event.w, event.h
+                    old_height = self.viewport.height
+                    self.viewport.size = (new_width, new_height)
+
+                    # Adjust the vertical position of the viewport to keep the floor at the bottom
+                    height_difference = new_height - old_height
+                    self.viewport.bottom += height_difference
+
+                    # Ensure the viewport does not go beyond the world's top boundary
+                    self.viewport.top = max(0, self.viewport.top)
+                    self.viewport.bottom = min(self.world_height, self.viewport.bottom)
+
+                    self.screen = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
+                    # Recreate the particle surface if necessary or resize it
+
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     mouseX, mouseY = pygame.mouse.get_pos()
-                    mouseCol = mouseX // self.w
-                    mouseRow = mouseY // self.w
+                    mouseCol = (mouseX + self.viewport.left) // self.w
+                    mouseRow = (mouseY + self.viewport.top) // self.w
                     if event.button == 1:  # Left mouse button adds particles
                         self.add_sand_particles(mouseCol, mouseRow)
                     elif event.button == 3:  # Right mouse button erases particles
                         self.erase_particles(mouseCol, mouseRow)
+
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LEFT]:
+                self.viewport.x = max(self.viewport.x - scroll_speed, 0)  # Scroll left
+            if keys[pygame.K_RIGHT]:
+                self.viewport.x = min(self.viewport.x + scroll_speed, self.world_width - self.viewport.width)  # Scroll right
+            # Add more controls if you want to scroll vertically as well
+
             mouse_pressed = pygame.mouse.get_pressed()
             if mouse_pressed[0]:  # If left mouse button is pressed and held
                 mouseX, mouseY = pygame.mouse.get_pos()
-                mouseCol = mouseX // self.w
-                mouseRow = mouseY // self.w
+                mouseCol = (mouseX + self.viewport.left) // self.w
+                mouseRow = (mouseY + self.viewport.top) // self.w
                 self.add_sand_particles(mouseCol, mouseRow)
+
+            # Drawing everything
             self.update_particles()
             self.draw_grid()
+
+            # Render the FPS text and blit it onto the screen
+            fps = clock.get_fps()
+            fps_text = self.font.render(f"FPS: {fps:.2f}", True, pygame.Color('white'))
+            self.screen.blit(fps_text, (10, 10))  # Position the text in the top-left corner
+
             pygame.display.flip()  # Update the display
             clock.tick(60)  # Limit to 60 frames per second
 
 
 if __name__ == "__main__":
-    sim = SandSimulation(800, 600, 4)  # Setup with desired window size and square size
+    sim = SandSimulation(4)  # Pass the square size directly
     sim.run()
