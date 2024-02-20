@@ -1,11 +1,14 @@
+# main.py
 import pygame
 from pygame.locals import *
 from particle import Sand, Water, Stone, particles, grid, gridSize  # Import from your particles.py
 
 # Initialize Pygame and set up the window
 pygame.init()
+global window_size
 window_size = (800, 600)
-screen = pygame.display.set_mode(window_size, RESIZABLE)
+global screen
+screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
 pygame.display.set_caption("Particle Simulation")
 clock = pygame.time.Clock()
 pygame.font.init()  # Initialize the font module
@@ -68,6 +71,14 @@ def update_simulation():
         particle.display(window_size, screen)
 
 
+def update_simulation_paused():
+
+    # Clear screen and redraw all particles
+    screen.fill((0, 0, 0))
+    for particle in particles:
+        particle.display(window_size, screen)
+
+
 def display_info():
     # Calculate FPS
     fps = round(clock.get_fps(), 2)
@@ -77,18 +88,19 @@ def display_info():
     fps_text = info_font.render(f"FPS: {fps}", True, pygame.Color("white"))
     particle_count_text = info_font.render(f"Particles: {len(particles)}", True, pygame.Color("white"))
     brush_size_text = info_font.render(f"Brush size: {brushSize}", True, pygame.Color("white"))
+    screen_size_text = info_font.render(f"Brush size: {brushSize}", True, pygame.Color("white"))
 
     # Display text on screen
+    #screen.blit(screen_size_text, (10, window_size[1] - 120))
     screen.blit(paused_text, (10, window_size[1] - 90))
     screen.blit(fps_text, (10, window_size[1] - 70))
     screen.blit(particle_count_text, (10, window_size[1] - 50))
     screen.blit(brush_size_text, (10, window_size[1] - 30))
-    pass
 
 
 # Main simulation loop
 def run_simulation():
-    global paused, brushSize
+    global paused, brushSize, window_size, screen
     selectedType = 0
     running = True
     while running:
@@ -116,23 +128,25 @@ def run_simulation():
                     else:
                         # If windowed, switch to fullscreen
                         pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-                elif event.type == pygame.VIDEORESIZE:
-                    # Update the window size when the window is resized
-                    window_size = (display_info.current_w, display_info.current_h)
-                    screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
+            elif event.type == pygame.VIDEORESIZE:
+                # Update the window size when the window is resized
+                window_size = event.size
+                screen = pygame.display.set_mode(window_size, pygame.RESIZABLE)
             elif event.type == MOUSEBUTTONDOWN:
                 add_particles(*pygame.mouse.get_pos(), event.button, selectedType)
 
         # Update and display simulation
         if not paused:
             update_simulation()
+        else:
+            update_simulation_paused()
 
         display_info()
 
         # Flip the display
         pygame.display.flip()
 
-        clock.tick(60)
+        clock.tick(150)
 
 
 if __name__ == "__main__":

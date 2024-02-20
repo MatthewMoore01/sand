@@ -1,3 +1,4 @@
+# particle.py
 import pygame
 import numpy as np
 from pygame.locals import *
@@ -5,9 +6,15 @@ from noise import pnoise2  # You might need to adjust this import based on your 
 import random
 
 # Global variables for the simulation
-gridSize = 200  # Adjust based on your simulation needs
+gridSize = 500  # Adjust based on your simulation needs
 grid = [None] * (gridSize * gridSize)
 particles = []
+
+# for event in pygame.event.get():
+#     if event.type == pygame.VIDEORESIZE:
+#         # Update the window size when the window is resized
+#         window_size = event.size
+
 
 class Particle:
     def __init__(self, options):
@@ -35,7 +42,7 @@ class Particle:
         # Assuming self.position is in grid coordinates, scale to screen coordinates
         screen_x = int(self.position['x'] / gridSize * window_size[0])
         screen_y = int(self.position['y'] / gridSize * window_size[1])
-        radius = 5  # Radius of the particle circle
+        radius = 3  # Radius of the particle circle
 
         # Draw the particle as a circle at the scaled screen position
         pygame.draw.circle(screen, self.color, (screen_x, screen_y), radius)
@@ -54,7 +61,7 @@ class Sand(Particle):
         self.name = 'Sand'
         self.value = 255
         self.color = [149, 113, 95]  # Default sand color
-        self.wet = False
+        self.colorOffset = int((random.random() * 2 - 1) * 20)
 
     def findNewPosition(self, x, y): # Very broken
         potential_positions = [
@@ -69,25 +76,17 @@ class Sand(Particle):
                     return {'x': pos['x'], 'y': pos['y'], 'offset': offset}
         current_offset = y * gridSize + x
 
-        if grid[current_offset] and grid[current_offset].name == "Water":
-            self.wet = True
-        else:
-            self.wet = False
-
         return None  # Return None if no new position is found
 
     def display(self, window_size, screen):
+        self.color = [149, 113, 95]
         # Adjust color if wet
-        display_color = self.color.copy()  # Copy the color so we don't modify the original
-        if self.wet:
-            # Darken the color by 35%
-            display_color = [int(c * 0.65) for c in display_color]
-
-        # Now, call the display method of the base class with the modified color
-        original_color = self.color  # Store the original color
-        self.color = display_color  # Temporarily set the color to the display color
+        self.color = [
+            max(min(255, self.color[0] + self.colorOffset), 0),
+            max(min(255, self.color[1] + self.colorOffset), 0),
+            max(min(255, self.color[2] + self.colorOffset), 0)
+        ]
         super().display(window_size, screen)  # Call the display method of the base class
-        self.color = original_color  # Reset the color to the original after drawing
 
 
 class Water(Particle):
@@ -122,13 +121,14 @@ class Stone(Particle):
         self.name = 'Stone'
         self.value = 253
         self.color = [125, 125, 125]  # Default stone color
-        self.colorOffset = int((random.random() * 2 - 1) * 50)
+        self.colorOffset = int((random.random() * 2 - 1) * 20)
 
     def findNewPosition(self, x, y):
         return None  # Stones do not move
 
     def display(self, window_size, screen):
         # Adjust the stone color slightly for visual variety
+        self.color = [125, 125, 125]
         self.color = [
             max(min(255, self.color[0] + self.colorOffset), 0),
             max(min(255, self.color[1] + self.colorOffset), 0),
